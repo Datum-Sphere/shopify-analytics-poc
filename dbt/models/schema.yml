@@ -1,0 +1,13 @@
+version: 2
+models:
+  - name: environment_ready
+    description: Foundation smoke model confirming dbt can create a database view.
+    columns:
+      - name: environment_ready
+        data_tests:
+          - not_null
+          - unique
+          - accepted_values:
+              arguments:
+                values: [1]
+                quote: false
