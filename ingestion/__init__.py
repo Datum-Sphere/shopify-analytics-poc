@@ -1,1 +1,1 @@
-"""Reserved for Shopify GraphQL ingestion; no API calls implemented."""
+"""Read-only Shopify products and orders ingestion."""

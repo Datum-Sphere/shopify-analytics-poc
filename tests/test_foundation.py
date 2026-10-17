@@ -32,6 +32,9 @@ class FoundationTests(unittest.TestCase):
                 self.assertNotIn("ports", service)
         self.assertEqual(services["streamlit"]["ports"], ["127.0.0.1:8501:8501"])
         self.assertNotIn("environment", services["streamlit"])
+        app_env = services["app"]["environment"]
+        self.assertIn("SHOPIFY_CLIENT_SECRET", app_env)
+        self.assertNotIn("SHOPIFY_CLIENT_SECRET", services["postgres"]["environment"])
         self.assertIn("postgres_data", config["volumes"])
 
 if __name__ == "__main__":

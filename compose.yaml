@@ -28,7 +28,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    environment: *database-env
+    environment:
+      <<: *database-env
+      SHOPIFY_STORE_DOMAIN: ${SHOPIFY_STORE_DOMAIN:-}
+      SHOPIFY_CLIENT_ID: ${SHOPIFY_CLIENT_ID:-}
+      SHOPIFY_CLIENT_SECRET: ${SHOPIFY_CLIENT_SECRET:-}
+      SHOPIFY_API_VERSION: ${SHOPIFY_API_VERSION:-2026-10}
     depends_on:
       postgres:
         condition: service_healthy
