@@ -18,3 +18,10 @@ CREATE TABLE IF NOT EXISTS raw.ingestion_runs (
     error text,
     verified_order text
 );
+
+-- Small, repeatable migration from Phase 2; retain every existing source row.
+ALTER TABLE raw.shopify_records ADD COLUMN IF NOT EXISTS is_synthetic boolean NOT NULL DEFAULT false;
+ALTER TABLE raw.shopify_records DROP CONSTRAINT IF EXISTS shopify_records_entity_check;
+ALTER TABLE raw.shopify_records ADD CONSTRAINT shopify_records_entity_check CHECK
+ (entity IN ('product','variant','order','order_line_item','order_transaction',
+             'refund','refund_line_item','sales_agreement','sale'));

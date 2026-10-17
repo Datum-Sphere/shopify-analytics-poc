@@ -1,0 +1,7 @@
+version: 2
+sources:
+  - name: shopify_raw
+    schema: raw
+    tables:
+      - name: shopify_records
+        description: Idempotent raw non-customer Shopify JSON; is_synthetic distinguishes fixtures.

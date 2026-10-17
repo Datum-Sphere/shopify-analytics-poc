@@ -1,0 +1,479 @@
+{
+  "version": 2,
+  "models": [
+    {
+      "name": "stg_orders",
+      "columns": [
+        {
+          "name": "order_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        },
+        {
+          "name": "order_id",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "is_test",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "reporting_timezone",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "shop_currency",
+          "data_tests": [
+            "not_null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stg_order_lines",
+      "columns": [
+        {
+          "name": "line_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        },
+        {
+          "name": "order_key",
+          "data_tests": [
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('stg_orders')",
+                  "field": "order_key"
+                }
+              }
+            },
+            "not_null"
+          ]
+        },
+        {
+          "name": "line_id",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "quantity",
+          "data_tests": [
+            "not_null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stg_products",
+      "columns": [
+        {
+          "name": "product_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stg_refunds",
+      "columns": [
+        {
+          "name": "refund_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        },
+        {
+          "name": "order_key",
+          "data_tests": [
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('stg_orders')",
+                  "field": "order_key"
+                }
+              }
+            },
+            "not_null"
+          ]
+        },
+        {
+          "name": "refund_id",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "created_at",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "payment_refunded_amount",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "currency_code",
+          "data_tests": [
+            "not_null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stg_refund_lines",
+      "columns": [
+        {
+          "name": "refund_line_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        },
+        {
+          "name": "refund_key",
+          "data_tests": [
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('stg_refunds')",
+                  "field": "refund_key"
+                }
+              }
+            },
+            "not_null"
+          ]
+        },
+        {
+          "name": "line_key",
+          "data_tests": [
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('stg_order_lines')",
+                  "field": "line_key"
+                }
+              }
+            },
+            "not_null"
+          ]
+        },
+        {
+          "name": "refund_line_id",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "quantity",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "line_subtotal",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "line_tax",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "currency_code",
+          "data_tests": [
+            "not_null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stg_sales_agreements",
+      "columns": [
+        {
+          "name": "agreement_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        },
+        {
+          "name": "order_key",
+          "data_tests": [
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('stg_orders')",
+                  "field": "order_key"
+                }
+              }
+            },
+            "not_null"
+          ]
+        },
+        {
+          "name": "refund_key",
+          "data_tests": [
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('stg_refunds')",
+                  "field": "refund_key"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "agreement_id",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "happened_at",
+          "data_tests": [
+            "not_null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "stg_sales",
+      "columns": [
+        {
+          "name": "sale_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        },
+        {
+          "name": "agreement_key",
+          "data_tests": [
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('stg_sales_agreements')",
+                  "field": "agreement_key"
+                }
+              }
+            },
+            "not_null"
+          ]
+        },
+        {
+          "name": "sale_id",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "action_type",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "line_type",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "total_amount",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "tax_amount",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "discount_before_tax",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "discount_after_tax",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "currency_code",
+          "data_tests": [
+            "not_null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "dim_product",
+      "columns": [
+        {
+          "name": "product_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fct_sales_events",
+      "columns": [
+        {
+          "name": "sale_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        },
+        {
+          "name": "line_key",
+          "data_tests": [
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('stg_order_lines')",
+                  "field": "line_key"
+                }
+              }
+            },
+            "not_null"
+          ]
+        },
+        {
+          "name": "product_key",
+          "data_tests": [
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('dim_product')",
+                  "field": "product_key"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "order_key",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "happened_at",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "reporting_date",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "currency_code",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "gross_sales",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "discounts",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "returns_amount",
+          "data_tests": [
+            "not_null"
+          ]
+        },
+        {
+          "name": "net_sales",
+          "data_tests": [
+            "not_null"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fct_returns",
+      "columns": [
+        {
+          "name": "return_event_key",
+          "data_tests": [
+            "not_null",
+            "unique",
+            {
+              "relationships": {
+                "arguments": {
+                  "to": "ref('fct_sales_events')",
+                  "field": "sale_key"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fct_refund_lines",
+      "columns": [
+        {
+          "name": "refund_line_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "fct_refunds",
+      "columns": [
+        {
+          "name": "refund_key",
+          "data_tests": [
+            "not_null",
+            "unique"
+          ]
+        }
+      ]
+    }
+  ]
+}

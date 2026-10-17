@@ -68,3 +68,48 @@ The initial local store hostname differed from the requested store and returned 
 ### Remaining limits
 
 Live store size exercises fewer than a page of roots; multipage root/nested behavior, retries, throttling, token expiry and failure sanitization are verified with mocks. No forced live expiry, throttling, or provider failure was induced. Read-orders visibility is normally limited to 60 days; no historical permission was requested. No incremental sync, deletion reconciliation, concurrent-run coordination, scheduler, inventory/customer extraction, dbt financial models, or dashboard metrics are implemented. Full JSON means the selected non-customer GraphQL fields, not a complete dump of every Shopify field. A forcibly terminated CLI can leave a running audit. No requested validation was skipped due to unavailable tooling.
+
+
+## Phase 3: financial ingestion and models
+
+Executed October 16, 2026 (America/Vancouver), against Admin GraphQL 2026-10. This supersedes earlier financial-model scope limits.
+
+### Automated validation
+
+- `docker compose exec -T -e RUN_DB_TESTS=1 app python -m unittest discover -s tests -v`: **28 passed**, including the unchanged original 22 tests and six new financial extraction/fixture tests. The tests use mocked API data and real PostgreSQL where enabled; they are not Shopify report reconciliation.
+- `docker compose exec -T app dbt build --project-dir dbt --profiles-dir dbt`: **PASS=100, WARN=0, ERROR=0, SKIP=0**: 14 views, one expected-results seed and 85 data tests. Tests cover unique/non-null keys and money fields, relationships and parent-order consistency, dataset isolation, no join fanout, financial identities, event-to-daily reconciliation, unsupported-event coverage and independent fixture expectations.
+- `docker compose config --quiet`, image build/startup, app dependency check and Python compilation: passed. All three containers healthy; host Streamlit health: `ok`. PostgreSQL remains internal in the shared/default configuration. Dashboard receives no Shopify environment variables. App is non-root, and `.env` is absent from its image.
+- A separate local edit publishing localhost:5432 temporarily caused the existing security test to fail. The port setting was preserved in ignored `compose.host-db.local.yaml`; shared Compose was restored to its original internal-only default. The final test suite passed. The override is opt-in with `docker compose -f compose.yaml -f compose.host-db.local.yaml up -d postgres`; it is not committed or copied into the app image.
+
+### Verified live API and persistence
+
+Live schema introspection confirmed `SalesAgreement`, `Sale` and `ProductSale`. `SalesAgreementLineItem` is absent. Agreement implementations are not Node-queryable, so ingestion fixes the outer agreement cursor while paginating each agreement's sales. Read-only queries for refund lines and adjustments were accepted using a nonexistent refund ID, confirming query shape but not real refund behavior.
+
+Live ingestion succeeded twice (runs 19 and 21) with identical unique counts: **17 products, 26 variants, one order, one order line, one payment transaction, one agreement, two sale events, zero refunds and zero refund lines**. The sale events are one product and one zero-value shipping event. No extra scopes or store mutations were used.
+
+Order **#1001** was checked separately from fixtures. Its original API line price × quantity is **CAD 200**, allocated discounts **0**, and there are no refunds/reversal events. The financial fact and daily mart yield gross **200**, discounts **0**, returns **0**, net **200**. The UTC agreement timestamp is 2026-10-17 01:18:30, which reports on **2026-10-16** in **America/New_York**. Shopify's `test` flag is false. The result was independently compared to live order-line data, not a report/export.
+
+A snapshot of all source unique counts and every daily mart value was captured before replaying live ingestion and fixture loading. The post-replay snapshot was identical. Audit runs intentionally increase; monetary facts do not append. The PostgreSQL container was recreated during configuration validation without deleting its volume, and the data/models remained available.
+
+An unsupported product `UPDATE` was simulated inside a PostgreSQL transaction: its fact became `is_supported=false`, net_sales became null, and the daily row showed one unsupported event and null net_sales. The transaction was rolled back, leaving live source data unchanged.
+
+### Fixture-validated financial results
+
+Synthetic records use **is_synthetic=true** and reserved store **financial-fixtures.invalid**. They are GraphQL-shaped examples, not captured Shopify responses. Fixtures cover two discounted lines, a separate unpaid/canceled order, test-order exclusion, two later partial reversals of the same original line, a shipping refund, a payments-only refund, midnight timezone conversion and isolated USD amounts.
+
+| Fixture reporting date | Currency | Gross | Discounts | Returns | Net |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 2026-10-01 | CAD | 250 | 25 | 0 | 225 |
+| 2026-10-02 | CAD | 90 | 0 | 0 | 90 |
+| 2026-10-04 | CAD | 0 | 0 | 90 | -90 |
+| 2026-10-06 | CAD | 0 | 0 | 90 | -90 |
+| CAD totals | CAD | **340** | **25** | **180** | **135** |
+| 2026-10-02 | USD | 7 | 0 | 0 | 7 |
+
+Each partial reversal is one 100-price unit with a 10 discount: gross return 100, discount reversed 10, net merchandise return 90, and tax 9 kept outside net sales. Payment headers sum to 213, including 18 item tax, 10 shipping and 5 cash-only difference; they are not substituted for returns of 180. Current quantity for the fully reversed original line is zero, yet original sales remain recorded on their original event date. USD is not added to CAD.
+
+### Evidence boundary and limits
+
+**No Shopify Analytics export, ShopifyQL report or admin-report reconciliation was performed.** The development store has no actual discounted, refunded, returned, exchanged or edited orders to verify those paths end to end. Return signs/allocation, tax-bearing examples, later dates and one-to-many joins are fixture-validated; query schema and original-order financials are API-validated. The mixed-currency fixture tests partitioning only, not real-store FX behavior.
+
+Supported merchandise events are ProductSale ORDER/RETURN with zero after-tax discount and consistent shop-money currencies. Nonzero unclassified/adjustment sales, product UPDATE/unknown actions and incomplete monetary data fail coverage. Physical returns, general price-update accounting, total sales, cash-flow reconciliation, complex/tax-inclusive report parity, historical sync, currency/timezone history, deleted-source reconciliation and advanced accounting remain outside scope. See [financial contract](docs/FINANCIALS.md) and README for grains, dates, allocation rules and exact reproduction commands. No required check was omitted because tooling was unavailable.

@@ -32,3 +32,28 @@ TRANSACTIONS = """query Transactions($id: ID!) {
  id kind status gateway test createdAt processedAt amountSet MONEY
  parentTransaction { id }
  }}}""".replace("MONEY", MONEY)
+
+SHOP = "query ShopSettings { shop { id ianaTimezone currencyCode taxesIncluded } }"
+REFUNDS = """query Refunds($id: ID!) {
+ order(id: $id) { refunds { id createdAt updatedAt processedAt totalRefundedSet MONEY } }
+}""".replace("MONEY", MONEY)
+REFUND_LINES = """query RefundLines($id: ID!, $after: String) {
+ refund(id: $id) { refundLineItems(first: 100, after: $after) {
+ nodes { id quantity restockType restocked lineItem { id } priceSet MONEY subtotalSet MONEY totalTaxSet MONEY }
+ PAGE } }
+}""".replace("MONEY", MONEY).replace("PAGE", PAGE)
+REFUND_ADJUSTMENTS = """query RefundAdjustments($id: ID!, $after: String) {
+ refund(id: $id) { orderAdjustments(first: 100, after: $after) {
+ nodes { id amountSet MONEY taxAmountSet MONEY } PAGE } }
+}""".replace("MONEY", MONEY).replace("PAGE", PAGE)
+# SalesAgreement is not Node-queryable. Keep the outer cursor fixed while
+# paginating its sales, then advance exactly one agreement at a time.
+AGREEMENTS = """query Agreements($id: ID!, $after: String, $salesAfter: String) {
+ order(id: $id) { agreements(first: 1, after: $after) {
+ nodes { __typename id happenedAt reason ... on RefundAgreement { refund { id } }
+ sales(first: 100, after: $salesAfter) {
+ nodes { __typename id actionType lineType quantity totalAmount MONEY
+ totalDiscountAmountBeforeTaxes MONEY totalDiscountAmountAfterTaxes MONEY totalTaxAmount MONEY
+ ... on ProductSale { lineItem { id } } } PAGE }
+ } PAGE } }
+}""".replace("MONEY", MONEY).replace("PAGE", PAGE)

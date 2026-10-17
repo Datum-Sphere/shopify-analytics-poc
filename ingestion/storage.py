@@ -5,7 +5,7 @@ from pathlib import Path
 import psycopg
 from psycopg.types.json import Jsonb
 
-ENTITIES = ("product", "variant", "order", "order_line_item", "order_transaction")
+ENTITIES = ("product", "variant", "order", "order_line_item", "order_transaction", "refund", "refund_line_item", "sales_agreement", "sale")
 
 
 def connect():
@@ -16,9 +16,10 @@ def connect():
 
 
 class Repository:
-    def __init__(self, connection, store):
+    def __init__(self, connection, store, is_synthetic=False):
         self.connection = connection
         self.store = store
+        self.is_synthetic = is_synthetic
 
     def initialize(self):
         self.connection.execute(Path(__file__).with_name("schema.sql").read_text())
@@ -35,12 +36,12 @@ class Repository:
         if entity not in ENTITIES:
             raise ValueError("Unknown record entity")
         self.connection.execute("""
-            INSERT INTO raw.shopify_records (store_domain, entity, source_id, parent_source_id, payload)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO raw.shopify_records (store_domain, entity, source_id, parent_source_id, payload, is_synthetic)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (store_domain, entity, source_id) DO UPDATE SET
                 parent_source_id = EXCLUDED.parent_source_id,
-                payload = EXCLUDED.payload, ingested_at = now()
-        """, (self.store, entity, payload["id"], parent_id, Jsonb(payload)))
+                payload = EXCLUDED.payload, is_synthetic = EXCLUDED.is_synthetic, ingested_at = now()
+        """, (self.store, entity, payload["id"], parent_id, Jsonb(payload), self.is_synthetic))
 
     def finish(self, run_id, status, counts, error=None, verified_order=None):
         self.connection.execute("""

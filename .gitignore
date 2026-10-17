@@ -231,3 +231,6 @@ dbt/dbt_packages/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Optional local database-client port override
+compose.host-db.local.yaml

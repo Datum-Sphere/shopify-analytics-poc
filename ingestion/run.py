@@ -39,6 +39,18 @@ def ingest(client, repository, verify_order=None):
                 for record in order[field]:
                     repository.upsert(entity, record, order["id"])
                     counts[entity] += 1
+            for refund in order.get("refunds", []):
+                repository.upsert("refund", refund, order["id"])
+                counts["refund"] += 1
+                for item in refund["refundLineItems"]:
+                    repository.upsert("refund_line_item", item, refund["id"])
+                    counts["refund_line_item"] += 1
+            for agreement in order.get("agreements", []):
+                repository.upsert("sales_agreement", agreement, order["id"])
+                counts["sales_agreement"] += 1
+                for sale in agreement["sales"]:
+                    repository.upsert("sale", sale, agreement["id"])
+                    counts["sale"] += 1
         if not found_verified:
             raise IngestionError("verification: requested order disappeared during extraction; retry the run")
         unique_counts = repository.counts()
