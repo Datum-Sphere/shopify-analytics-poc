@@ -45,7 +45,7 @@ docker compose exec app python -m unittest discover -s tests -v
 
 ## Security and operations
 
-Only `127.0.0.1:8501` is published to the Windows host; PostgreSQL stays on the Compose network. Both Python containers run as non-root. The dashboard receives no credentials and provides no shell or subprocess controls. Only the app container receives Shopify configuration. Tokens exist only in process memory and are cleared when the client closes; they are never stored in PostgreSQL or files. `.env`, secrets, caches, and dbt output are excluded from Git and Docker build contexts. Never commit credentials. Database credentials are injected at runtime; local Docker administrators can inspect container environment variables. This is a local POC, not production hardening.
+Streamlit is published on `127.0.0.1:8501` and PostgreSQL on `127.0.0.1:5432` for local DataGrip access. Both ports bind only to the Windows host loopback interface. Containers connect to PostgreSQL through `postgres:5432` on the Compose network. Both Python containers run as non-root. The dashboard receives no credentials and provides no shell or subprocess controls. Only the app container receives Shopify configuration. Tokens exist only in process memory and are cleared when the client closes; they are never stored in PostgreSQL or files. `.env`, secrets, caches, and dbt output are excluded from Git and Docker build contexts. Never commit credentials. Database credentials are injected at runtime; local Docker administrators can inspect container environment variables. This is a local POC, not production hardening.
 
 PostgreSQL uses the named `postgres_data` volume. `docker compose down` stops the stack and preserves data. `docker compose down -v` **deletes all database data**. Changing database credentials in `.env` does not change an existing database volume's credentials; retain the existing credentials or intentionally reinitialize disposable data. Application code is baked into images: rebuild after edits. dbt artifacts live in the app container and can be inspected with `docker compose exec app dbt ...` or copied with `docker compose cp`.
 
@@ -54,6 +54,20 @@ Troubleshoot with `docker compose ps` and `docker compose logs --tail 100`. Do n
 ## Validation
 
 See [VALIDATION.md](VALIDATION.md) for checks actually executed in the implementation environment. Direct dependencies are pinned in requirements files; transitive dependencies and base image tags can change, so this is not a byte-for-byte locked supply chain.
+
+## DataGrip connection
+
+The standard `compose.yaml` publishes PostgreSQL on localhost; no override file is required. After changing this configuration, apply it with `docker compose up -d`.
+
+| Setting | Value |
+| --- | --- |
+| Host | `127.0.0.1` |
+| Port | `5432` |
+| Database | `POSTGRES_DB` from your local `.env` |
+| User | `POSTGRES_USER` from your local `.env` |
+| Password | `POSTGRES_PASSWORD` from your local `.env` |
+
+Keep credentials in your local client configuration and out of Git. The old optional local port override is no longer needed.
 
 ## Phase 2 ingestion
 

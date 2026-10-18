@@ -113,3 +113,18 @@ Each partial reversal is one 100-price unit with a 10 discount: gross return 100
 **No Shopify Analytics export, ShopifyQL report or admin-report reconciliation was performed.** The development store has no actual discounted, refunded, returned, exchanged or edited orders to verify those paths end to end. Return signs/allocation, tax-bearing examples, later dates and one-to-many joins are fixture-validated; query schema and original-order financials are API-validated. The mixed-currency fixture tests partitioning only, not real-store FX behavior.
 
 Supported merchandise events are ProductSale ORDER/RETURN with zero after-tax discount and consistent shop-money currencies. Nonzero unclassified/adjustment sales, product UPDATE/unknown actions and incomplete monetary data fail coverage. Physical returns, general price-update accounting, total sales, cash-flow reconciliation, complex/tax-inclusive report parity, historical sync, currency/timezone history, deleted-source reconciliation and advanced accounting remain outside scope. See [financial contract](docs/FINANCIALS.md) and README for grains, dates, allocation rules and exact reproduction commands. No required check was omitted because tooling was unavailable.
+
+
+## DataGrip localhost access — October 18, 2026
+
+At the user's request, the shared `compose.yaml` now publishes PostgreSQL as `127.0.0.1:5432:5432`. This supersedes the earlier internal-only/override-only PostgreSQL configuration; no override is required. The foundation test now checks the exact localhost binding for PostgreSQL and Streamlit, and still rejects an application host port.
+
+Validation executed:
+
+- `docker compose config --quiet`: passed.
+- `docker compose up --build -d`: passed; all services healthy and the database volume retained.
+- `docker compose exec -T app python -m unittest discover -s tests -p test_foundation.py -v`: three tests passed.
+- `docker compose port postgres 5432`: `127.0.0.1:5432`.
+- Windows `Test-NetConnection -ComputerName 127.0.0.1 -Port 5432 -InformationLevel Quiet`: `True`.
+
+DataGrip should use host `127.0.0.1`, port `5432`, and database/user/password from the local `.env`. DataGrip's own login was not automated. No credentials were printed or changed.

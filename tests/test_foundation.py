@@ -28,8 +28,9 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(set(services), {"postgres", "app", "streamlit"})
         for name, service in services.items():
             self.assertIn("healthcheck", service)
-            if name != "streamlit":
+            if name == "app":
                 self.assertNotIn("ports", service)
+        self.assertEqual(services["postgres"]["ports"], ["127.0.0.1:5432:5432"])
         self.assertEqual(services["streamlit"]["ports"], ["127.0.0.1:8501:8501"])
         self.assertNotIn("environment", services["streamlit"])
         app_env = services["app"]["environment"]
