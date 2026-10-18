@@ -5,3 +5,5 @@ sources:
     tables:
       - name: shopify_records
         description: Idempotent raw non-customer Shopify JSON; is_synthetic distinguishes fixtures.
+      - name: ingestion_runs
+        description: Ingestion audit; dashboard receives only aggregated success timestamps.

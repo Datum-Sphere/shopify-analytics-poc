@@ -1,6 +1,6 @@
 # Shopify Analytics POC
 
-Free, Dockerized consulting demonstration. The foundation, read-only ingestion, and bounded Phase 3 financial models are implemented. Scheduling and dashboard business logic are not implemented. Financial results are API/fixture validated, not reconciled to a Shopify Analytics report.
+Free, Dockerized consulting demonstration. The foundation, read-only ingestion, bounded financial models, and Phase 4A Streamlit/Plotly financial dashboard are implemented. Scheduling and pipeline triggering are not implemented. Financial results are API/fixture validated, not reconciled to a Shopify Analytics report.
 
 ## Architecture
 
@@ -9,13 +9,13 @@ Architecture: Shopify Admin GraphQL API (2026-10) → Python ingestion → Postg
 - `ingestion/`: OAuth client credentials, read-only GraphQL transport, paginated extractors, JSONB upserts, run audit and CLI.
 - `pipeline/`: idle application service and authenticated database health check; future orchestration entry point.
 - `dbt/`: environment-based profile, raw staging, product dimension, sales/returns facts, daily mart, financial tests and expected fixture results.
-- `dashboard/`: environment-ready Streamlit page and dedicated Dockerfile.
+- `dashboard/`: read-only financial dashboard, parameterized database access, Plotly charts and dedicated Dockerfile.
 - `tests/`: automated foundation smoke checks.
 - `Dockerfile`, `compose.yaml`: Python 3.12 services and persistent PostgreSQL.
 
 ## Prerequisites
 
-Docker Desktop running Linux containers with Docker Compose v2+ (tested with Compose v5). On Windows enable the WSL2 backend. Git is needed to clone. No host Python, PostgreSQL, dbt, or paid analytics services are required. Shopify client credentials are required to run ingestion; the environment-ready page works without them. Internet access is needed for initial image/package downloads. Docker Desktop licensing depends on your organization.
+Docker Desktop running Linux containers with Docker Compose v2+ (tested with Compose v5). On Windows enable the WSL2 backend. Git is needed to clone. No host Python, PostgreSQL, dbt, or paid analytics services are required. Shopify client credentials are required to run ingestion; the dashboard can show synthetic data without them. Internet access is needed for initial image/package downloads. Docker Desktop licensing depends on your organization.
 
 ## Start (PowerShell)
 
@@ -24,14 +24,14 @@ git clone https://github.com/Datum-Sphere/shopify-analytics-poc.git
 cd shopify-analytics-poc
 # For a fresh clone only; preserve an existing configured .env.
 if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-# Edit .env and replace POSTGRES_PASSWORD with a long random password.
+# Edit .env: set POSTGRES_PASSWORD and a different random DASHBOARD_DB_PASSWORD (20+ characters).
 # For ingestion, set the Shopify client ID and secret of your installed app.
 docker compose config --quiet
 docker compose up --build -d
 docker compose ps
 ```
 
-Open http://localhost:8501. The page displays **Shopify Analytics POC — Environment Ready.** Containers may take several minutes to build. Wait for all three services to become healthy:
+Open http://localhost:8501 for **Shopify Sales Analytics**. Live Shopify is the default dataset. On a fresh database, complete the data/model setup below before financial figures become available. Containers may take several minutes to build. Wait for all three services to become healthy:
 
 ```powershell
 docker compose up -d --wait --wait-timeout 180
@@ -45,7 +45,7 @@ docker compose exec app python -m unittest discover -s tests -v
 
 ## Security and operations
 
-Streamlit is published on `127.0.0.1:8501` and PostgreSQL on `127.0.0.1:5432` for local DataGrip access. Both ports bind only to the Windows host loopback interface. Containers connect to PostgreSQL through `postgres:5432` on the Compose network. Both Python containers run as non-root. The dashboard receives no credentials and provides no shell or subprocess controls. Only the app container receives Shopify configuration. Tokens exist only in process memory and are cleared when the client closes; they are never stored in PostgreSQL or files. `.env`, secrets, caches, and dbt output are excluded from Git and Docker build contexts. Never commit credentials. Database credentials are injected at runtime; local Docker administrators can inspect container environment variables. This is a local POC, not production hardening.
+Streamlit is published on `127.0.0.1:8501` and PostgreSQL on `127.0.0.1:5432` for local DataGrip access. Both ports bind only to the Windows host loopback interface. Containers connect to PostgreSQL through `postgres:5432` on the Compose network. Both Python containers run as non-root. The dashboard receives only its dedicated SELECT-only database password and provides no shell or subprocess controls. Only the app container receives Shopify configuration. Tokens exist only in process memory and are cleared when the client closes; they are never stored in PostgreSQL or files. `.env`, secrets, caches, and dbt output are excluded from Git and Docker build contexts. Never commit credentials. Database credentials are injected at runtime; local Docker administrators can inspect container environment variables. This is a local POC, not production hardening.
 
 PostgreSQL uses the named `postgres_data` volume. `docker compose down` stops the stack and preserves data. `docker compose down -v` **deletes all database data**. Changing database credentials in `.env` does not change an existing database volume's credentials; retain the existing credentials or intentionally reinitialize disposable data. Application code is baked into images: rebuild after edits. dbt artifacts live in the app container and can be inspected with `docker compose exec app dbt ...` or copied with `docker compose cp`.
 
@@ -171,6 +171,61 @@ Live order **#1001**: API-based gross **CAD 200**, discounts **0**, returns **0*
 
 **No Shopify Analytics report or ShopifyQL reconciliation was performed.** Report parity for historical changes, price updates, post-tax discounts, tax-inclusive/complex tax scenarios, physical returns, cancellations/edits, fees, and multi-currency conversion remains unverified. Read-orders history is still limited by current permissions. The POC retains all accessible adjustment sale JSON and flags unsupported nonzero adjustments rather than guessing. It does not implement production historical sync, deleted-record reconciliation, or advanced accounting.
 
+## Phase 4A read-only dashboard
+
+The dashboard at http://localhost:8501 offers Live Shopify (default) / Synthetic Demo selection, store selection, currency selection and an inclusive date range. Four KPI cards and three interactive Plotly charts show daily gross/net sales, merchandise reversals and up to ten products by net sales. All views use the same dataset/store/currency/date filters. Store-local reporting dates and existing financial definitions remain unchanged; no FX conversion or independent Python metric formulas are used.
+
+The visible **Run Pipeline & Refresh** button is disabled. Its controlled, authorized backend is deferred to Phase 4B; the dashboard cannot execute ingestion, dbt or shell commands. Filter changes only issue read-only SQL queries. There is no hosting or remote exposure.
+
+### Setup and permissions
+
+Add `DASHBOARD_DB_PASSWORD` to your ignored local `.env`, using a different random password of at least 20 characters from `POSTGRES_PASSWORD`. Fresh-clone placeholders must be replaced. Never paste credentials into command history or commit `.env`.
+
+```powershell
+docker compose config --quiet
+docker compose up --build -d
+# Live data is optional when demonstrating only synthetic data.
+docker compose exec -T app python -m ingestion.run --verify-order '#1001'
+docker compose exec -T app python -m ingestion.fixtures
+docker compose exec -T app dbt build --project-dir dbt --profiles-dir dbt
+```
+
+The application startup provisions `shopify_dashboard` on both new and existing database volumes using the existing local bootstrap role. It initializes raw schema structure without running Shopify ingestion. Missing analytics models produce a friendly dashboard readiness message until the financial build completes. Bootstrap requires the role-management privileges provided by the local PostgreSQL image's application user.
+
+Streamlit receives only `DASHBOARD_DB_HOST`, `DASHBOARD_DB_PORT`, `DASHBOARD_DB_NAME` and `DASHBOARD_DB_PASSWORD`; its login name is fixed to `shopify_dashboard`. It receives neither Shopify secrets nor privileged database credentials. The application alone receives the separate password for role provisioning. Password SQL is not logged during provisioning, and exceptions shown by the dashboard are sanitized.
+
+The role has SELECT on exactly these analytics views: `mart_daily_sales`, `fct_sales_events`, `dim_product`, `dashboard_ingestion_status`, and `dashboard_financial_issues`. It has no raw schema access, audit-error access, role membership, write privileges or schema creation privileges. Temporary-table access granted to PUBLIC by PostgreSQL is revoked in this POC database, and public-schema CREATE is disabled. Defaults use read-only transactions; the SQL grants still deny writes if a client disables that default. Explicit dbt model grants preserve access when dbt rebuilds the five views; there is no blanket grant on future tables or raw objects.
+
+For password rotation, update only the local `.env` and recreate the app and Streamlit services. Provisioning is also available through an operator-only CLI:
+
+```powershell
+docker compose up -d --force-recreate app streamlit
+# Optional operator repair/regrant after an existing-volume setup:
+docker compose exec -T app python -m pipeline.dashboard_access
+```
+
+Keep the committed bindings `127.0.0.1:5432:5432` (local DataGrip) and `127.0.0.1:8501:8501` on the future demo laptop. Never replace them with unrestricted `5432:5432`, `8501:8501`, or `0.0.0.0` host bindings. The backend app has no published port, the dashboard has no Docker socket, and containers use the private Compose network. The optional ignored host-db override is unnecessary with the current main configuration.
+
+### Data integrity and validation boundary
+
+KPIs sum columns from `mart_daily_sales`; product results first aggregate `fct_sales_events` at product key, then join the tested unique `dim_product`. Product events with no catalog key stay in **Custom / unlinked product**. Identical product titles retain distinct chart keys. Test orders are excluded consistently. Charts use floats only for rendering; database aggregation and KPI formatting preserve PostgreSQL numeric/Decimal amounts.
+
+A selected NULL/unsupported product metric or a matching coverage issue withholds **all** selected financial cards and charts. The UI does not fill NULL with zero or show partial valid totals. The safe quality view also catches unclassified adjustments, missing financial extraction and missing product-event parents, which can be absent from the daily mart. An issue with unknown date or currency blocks the selected source scope conservatively. Issues in a known different period/currency do not contaminate a valid selection. No-data periods display an empty-state message and dashes, not zero sales; calendar gaps are not fabricated.
+
+All financial reads for a rendered selection share a read-only repeatable-read transaction. No application data cache is used. The freshness label is the latest successful ingestion for the selected dataset/store in UTC, independent of the report date range. It is not a dbt-build timestamp or a certification of the latest tests. The metadata view exposes no raw payload, error text or PII.
+
+Dashboard tests cover live **CAD 200** gross/net for the existing #1001 snapshot; full-range synthetic CAD **340 gross, 25 discounts, 180 returns, 135 net**; isolated synthetic USD **7**; and the later-return day **2026-10-04: CAD -90 net**. These are existing ingested API/fixture results. **No Shopify Analytics report reconciliation has been performed.** The dashboard and operator tests do not mutate Shopify or execute a new ingestion automatically.
+
+```powershell
+# Run after loading source data and completing the dbt build above.
+docker compose exec -T -e RUN_DB_TESTS=1 -e RUN_DASHBOARD_DB_TESTS=1 app python -m unittest discover -s tests -v
+docker compose exec -T app dbt build --project-dir dbt --profiles-dir dbt
+docker compose ps
+(Invoke-WebRequest http://localhost:8501/_stcore/health).Content
+```
+
+The dashboard database integration tests explicitly verify the current development-store snapshot and reserved fixtures. Mocked UI/query tests run without database setup; database flags are opt-in. See VALIDATION.md for executed checks and observed limitations.
+
 ## Next step
 
-Obtain an authorized Shopify sales-report export and representative discounted/returned orders to reconcile reporting-period totals, signs and filters before adding dashboard metrics.
+Phase 4B can add a controlled, authorized pipeline-trigger interface. Separately, obtain a Shopify report export and representative real returns/discounts to extend financial reconciliation beyond API and fixture validation.

@@ -4,6 +4,7 @@ import signal
 import threading
 
 from pipeline.healthcheck import check_database
+from pipeline.dashboard_access import provision
 
 
 def main():
@@ -11,7 +12,11 @@ def main():
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     check_database()
-    print("Pipeline environment ready; ingestion is not implemented.", flush=True)
+    try:
+        provision()
+    except Exception:
+        raise SystemExit("Dashboard access setup failed; check the separate dashboard password and database owner configuration") from None
+    print("Pipeline environment ready; automatic pipeline execution is disabled.", flush=True)
     stop.wait()
 
 

@@ -32,6 +32,7 @@ services:
       dockerfile: Dockerfile
     environment:
       <<: *database-env
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD:?Set a separate DASHBOARD_DB_PASSWORD in .env}
       SHOPIFY_STORE_DOMAIN: ${SHOPIFY_STORE_DOMAIN:-}
       SHOPIFY_CLIENT_ID: ${SHOPIFY_CLIENT_ID:-}
       SHOPIFY_CLIENT_SECRET: ${SHOPIFY_CLIENT_SECRET:-}
@@ -51,6 +52,11 @@ services:
     build:
       context: .
       dockerfile: dashboard/Dockerfile
+    environment:
+      DASHBOARD_DB_HOST: postgres
+      DASHBOARD_DB_PORT: "5432"
+      DASHBOARD_DB_NAME: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      DASHBOARD_DB_PASSWORD: ${DASHBOARD_DB_PASSWORD:?Set a separate DASHBOARD_DB_PASSWORD in .env}
     ports:
       - "127.0.0.1:8501:8501"
     depends_on:

@@ -1,0 +1,18 @@
+version: 2
+models:
+  - name: dashboard_ingestion_status
+    description: Safe latest successful ingestion timestamp per source; no raw errors or payloads.
+    columns:
+      - name: store_domain
+        data_tests: [not_null, unique]
+      - name: is_synthetic
+        data_tests: [not_null]
+  - name: dashboard_financial_issues
+    description: Safe coverage issues; nullable date/currency means scope cannot be determined safely.
+    columns:
+      - name: store_domain
+        data_tests: [not_null]
+      - name: is_synthetic
+        data_tests: [not_null]
+      - name: issue_type
+        data_tests: [not_null]

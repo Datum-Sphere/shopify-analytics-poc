@@ -128,3 +128,62 @@ Validation executed:
 - Windows `Test-NetConnection -ComputerName 127.0.0.1 -Port 5432 -InformationLevel Quiet`: `True`.
 
 DataGrip should use host `127.0.0.1`, port `5432`, and database/user/password from the local `.env`. DataGrip's own login was not automated. No credentials were printed or changed.
+
+
+## Phase 4A: read-only Streamlit financial dashboard — October 18, 2026
+
+The placeholder page is replaced by a financial dashboard. Financial formula/grain/date/currency contracts remain unchanged. No pipeline execution backend or remote exposure was added; Run Pipeline & Refresh is visible and disabled for Phase 4B.
+
+### Executed automated checks
+
+| Check | Observed result |
+| --- | --- |
+| `docker compose config --quiet` | Passed with explicit localhost bindings and separate dashboard credential |
+| `docker compose up --build -d` | Both images built; PostgreSQL, app and Streamlit healthy |
+| `docker compose exec -T app dbt build --project-dir dbt --profiles-dir dbt` | PASS=108, WARN=0, ERROR=0, SKIP=0: 16 views, 91 data tests, one seed |
+| `docker compose exec -T -e RUN_DB_TESTS=1 -e RUN_DASHBOARD_DB_TESTS=1 app python -m unittest discover -s tests -v` | 43 passed; no skips |
+| `python -m compileall -q dashboard pipeline tests` | Passed |
+| `docker compose exec -T streamlit python -m pip check` | No broken requirements |
+| Host HTTP GET `http://localhost:8501` | HTTP 200 |
+| Host GET `http://localhost:8501/_stcore/health` | `ok` |
+
+The original 28 Python tests remain included; the placeholder-title/security expectations were updated for the intentionally changed UI and dedicated database environment. Fifteen dashboard tests cover query parameters, dataset/currency/date isolation, live order data, synthetic totals, later negative sales, empty data, null/unsupported values, current product aggregation, custom/unlinked products, duplicate titles, decimal display precision, UI rendering, disabled controls, safe errors and database permissions.
+
+Initial checks caught a missing import in the bootstrap helper and a context-manager mock in the new tests. Both were corrected before the final passing run. Streamlit AppTest emits its usual missing ScriptRunContext warning outside a normal browser session; the tests report no rendering exceptions.
+
+### Database and production-image evidence
+
+The local ignored `.env` was extended with a generated, separate dashboard password; existing Shopify/database secrets were preserved and not printed. App startup provisions `shopify_dashboard` on the existing database volume. Explicit model grants survive dbt rebuilds. The role has SELECT on exactly five analytics views: mart_daily_sales, fct_sales_events, dim_product, dashboard_ingestion_status and dashboard_financial_issues.
+
+Real PostgreSQL tests confirmed the role is not superuser/createdb/createrole/replication/bypassrls, uses a default read-only transaction, has no extra analytic-view grants, and cannot select raw payloads, select ingestion errors, update raw data, create public or temporary tables, or SET ROLE to the privileged application user. These write/role attempts were denied even after disabling the convenience read-only session setting, proving SQL privilege enforcement. PUBLIC temporary-table access and public-schema CREATE are revoked by the local bootstrap.
+
+Runtime checks inside the Streamlit container confirmed no SHOPIFY_*, POSTGRES_* or DBT_* variables and no `/app/.env`. Only the dedicated DASHBOARD_DB_* connection values are injected. No Docker socket is mounted. The committed host mappings remain 127.0.0.1:5432 for DataGrip and 127.0.0.1:8501 for Streamlit; the app has no host port. No broader laptop/network exposure was introduced.
+
+The actual production Streamlit image was also exercised with AppTest and its real SELECT-only connection, without query mocks. It rendered three Plotly charts and the following metrics, then changed dataset/date controls successfully without exceptions:
+
+| Selection | Gross | Discounts | Returns | Net |
+| --- | ---: | ---: | ---: | ---: |
+| Live CAD, current development-store data | 200 | 0 | 0 | 200 |
+| Synthetic CAD, full fixture range October 1–6 | 340 | 25 | 180 | 135 |
+| Synthetic CAD, October 4 only | 0 | 0 | 90 | -90 |
+| Synthetic CAD, October 3 only | unavailable | unavailable | unavailable | unavailable |
+
+The empty date renders dashes and no charts, rather than invented zero amounts. A separate source/fact query explicitly scoped to real order #1001 confirmed CAD 200 gross/net and zero discounts/returns. These checks use existing ingested Shopify data, not a newly executed Shopify request or a Shopify Analytics report reconciliation. Synthetic USD 7 was separately checked; it never entered CAD or live totals.
+
+### Unsupported-data and product checks
+
+Isolated synthetic test stores were loaded, modified only in PostgreSQL, and cleaned up afterward. Tests verified that:
+
+- Removing a line's catalog product reference retains a Custom / unlinked product bucket; all product totals still sum to the selected mart net 135.
+- A later product UPDATE produces an unsupported selection and withholds every KPI/chart; another valid date or currency remains independent.
+- A non-product AdjustmentSale, which is absent from merchandise mart totals, still blocks the matching date through safe quality metadata.
+- Missing financial-extraction metadata with unknown event date blocks the selected source conservatively, even on an otherwise valid earlier day.
+- Query failures produce fixed, credential-free messages instead of driver exception text; partial NULL sums are never displayed as complete totals.
+
+The dashboard quality view additionally flags missing test/timezone/currency metadata and missing event/line parents. It is a coverage safeguard, not proof that every possible financial test was just run. Safe freshness metadata is only the latest successful ingestion timestamp per dataset/store, not build success or a timestamp restricted to the selected report period.
+
+### Limitations and checks not performed
+
+No Shopify Analytics export/ShopifyQL reconciliation, fresh ingestion, pipeline-trigger backend, authentication/hosting layer, Cloudflare or other remote setup was implemented or tested in this slice. Existing live-return/discount limitations from the financial contract still apply. Product labels are current catalog/fallback labels, not historical dimensions. The page performs uncached SELECTs in a read-only repeatable-read snapshot and is intended for small demonstration datasets.
+
+Rendering was validated with mocked and real-database Streamlit AppTest sessions plus host HTTP checks. A graphical headless-browser screenshot attempt was blocked by execution policy; no browser screenshot or pixel-level visual review is claimed. All required Python/dbt/Docker/security checks ran successfully.
