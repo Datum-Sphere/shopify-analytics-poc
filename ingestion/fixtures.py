@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ingestion.config import IngestionError
 from ingestion.storage import ENTITIES, Repository, connect
+from pipeline import locking
 
 FIXTURE_STORE = "financial-fixtures.invalid"
 FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "financials.json"
@@ -30,6 +31,9 @@ def load_records(repository):
 def main():
     try:
         with connect() as connection:
+            if not locking.acquire(connection):
+                print('{"status":"already_running"}')
+                return 2
             repo = Repository(connection, FIXTURE_STORE, is_synthetic=True)
             repo.initialize()
             print(json.dumps(load_records(repo), sort_keys=True))

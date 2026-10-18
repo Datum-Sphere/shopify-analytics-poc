@@ -5,10 +5,11 @@ from pathlib import Path
 from psycopg import sql
 
 from ingestion.storage import connect
+from pipeline.run import initialize
+from pipeline.publication import MODELS
 
 ROLE = "shopify_dashboard"
-VIEWS = ("mart_daily_sales", "fct_sales_events", "dim_product",
-         "dashboard_ingestion_status", "dashboard_financial_issues")
+VIEWS = (*MODELS, "publication")
 
 
 def provision():
@@ -21,6 +22,11 @@ def provision():
         connection.execute("SET LOCAL log_min_error_statement = 'panic'")
         connection.execute(Path(__file__).resolve().parents[1].joinpath("ingestion/schema.sql").read_text())
         connection.execute("CREATE SCHEMA IF NOT EXISTS analytics")
+        # Bootstrap metadata only. Candidate financial data is never auto-published.
+        connection.commit()
+        initialize(connection)
+        connection.execute("SET LOCAL log_statement = 'none'")
+        connection.execute("SET LOCAL log_min_error_statement = 'panic'")
         if connection.execute("SELECT current_user").fetchone()[0] == ROLE:
             raise ValueError("Dashboard provisioning requires the application database owner")
         if not connection.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", (ROLE,)).fetchone():
@@ -37,14 +43,14 @@ def provision():
         # and public-schema CREATE so this login cannot bypass SELECT-only grants.
         connection.execute(sql.SQL("REVOKE TEMPORARY ON DATABASE {} FROM PUBLIC").format(sql.Identifier(database)))
         connection.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
-        connection.execute(sql.SQL("REVOKE ALL ON SCHEMA raw, analytics FROM {}").format(sql.Identifier(ROLE)))
-        connection.execute(sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA raw, analytics FROM {}").format(sql.Identifier(ROLE)))
-        connection.execute(sql.SQL("REVOKE ALL ON ALL SEQUENCES IN SCHEMA raw, analytics FROM {}").format(sql.Identifier(ROLE)))
-        connection.execute(sql.SQL("GRANT USAGE ON SCHEMA analytics TO {}").format(sql.Identifier(ROLE)))
+        connection.execute(sql.SQL("REVOKE ALL ON SCHEMA raw, analytics, operations, reporting FROM {}").format(sql.Identifier(ROLE)))
+        connection.execute(sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA raw, analytics, operations, reporting FROM {}").format(sql.Identifier(ROLE)))
+        connection.execute(sql.SQL("REVOKE ALL ON ALL SEQUENCES IN SCHEMA raw, analytics, operations, reporting FROM {}").format(sql.Identifier(ROLE)))
+        connection.execute(sql.SQL("GRANT USAGE ON SCHEMA reporting TO {}").format(sql.Identifier(ROLE)))
         for view in VIEWS:
-            if connection.execute("SELECT to_regclass(%s)", ("analytics."+view,)).fetchone()[0]:
+            if connection.execute("SELECT to_regclass(%s)", ("reporting."+view,)).fetchone()[0]:
                 connection.execute(sql.SQL("GRANT SELECT ON {}.{} TO {}")
-                                   .format(sql.Identifier("analytics"),sql.Identifier(view),sql.Identifier(ROLE)))
+                                   .format(sql.Identifier("reporting"),sql.Identifier(view),sql.Identifier(ROLE)))
 
 
 if __name__ == "__main__":

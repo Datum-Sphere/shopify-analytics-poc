@@ -1,9 +1,10 @@
-"""Read-only financial dashboard. Pipeline execution is intentionally unavailable."""
+"""Read-only financial dashboard with authenticated, fixed-operation control."""
 from datetime import timezone
 
 import streamlit as st
 
 from dashboard import data, charts
+from dashboard.pipeline_controls import render as pipeline_controls
 
 
 def amount(value,currency):
@@ -30,9 +31,7 @@ def main():
         label=st.selectbox("Dataset",["Live Shopify","Synthetic Demo"],key="dataset")
         synthetic=label=="Synthetic Demo"
         st.divider()
-        st.button("Run Pipeline & Refresh",disabled=True,
-                  help="Available in Phase 4B through a controlled, authorized pipeline interface.")
-        st.caption("Pipeline execution will be enabled in Phase 4B. Filters only read existing data.")
+        pipeline_controls()
     st.info("Validation boundary: synthetic scenarios validate the models; live figures come from the Shopify API. Neither is Shopify-report reconciliation.",icon="ℹ️")
     try:
         available=[r for r in data.catalog() if r["is_synthetic"]==synthetic]
@@ -68,7 +67,9 @@ def main():
     stamp=result["last_successful_ingestion_at"]
     last=stamp.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if stamp else "Not recorded"
     st.caption(f"Source: {label} · {store}  |  {currency}  |  {dates[0]} to {dates[1]}")
-    st.caption("Last successful ingestion for this source: "+last+"  ·  Read-only PostgreSQL / dbt models")
+    st.caption("Last successful ingestion in this publication: "+last+"  ·  Read-only PostgreSQL / dbt output")
+    if result.get("published_at"):
+        st.caption(f"Validated publication: {result['published_at']} · Pipeline run: {result['publication_run_id']}")
     if result["status"]=="unsupported":
         st.error("Financial reporting is paused for this selection. Unsupported or incomplete financial records were detected; totals and charts are withheld to avoid partial or misleading figures.")
     columns=st.columns(4)
@@ -97,8 +98,8 @@ def main():
         st.write("KPIs aggregate tested dbt model columns; the dashboard does not redefine Shopify financial metrics. Test orders are excluded. Synthetic and live figures are kept separate.")
         st.write("Gross sales − discounts − returns = net merchandise sales. Refund audit records are not added to sale events. Product titles reflect the current catalog or the model's missing-catalog fallback.")
         st.write("The demo store currently verifies order #1001 against API data. Partial-return and discount scenarios are fixture-validated. No Shopify Analytics export or ShopifyQL report reconciliation has been performed.")
-        st.caption("Validation notes describe the project evidence; this page does not execute or certify a new dbt test run.")
-        st.caption("Project contract: docs/FINANCIALS.md. No pipeline execution or remote access is enabled in this phase.")
+        st.caption("The financial snapshot is published only after dbt build/tests succeed. This is model validation, not Shopify report reconciliation.")
+        st.caption("Project contract: docs/FINANCIALS.md. No remote access is enabled.")
 
 
 if __name__=="__main__":

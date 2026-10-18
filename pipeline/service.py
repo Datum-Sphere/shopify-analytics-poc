@@ -1,10 +1,11 @@
-"""Idle application host for future orchestration, with graceful shutdown."""
+"""Internal pipeline HTTP host; no automatic Shopify runs at startup."""
 
 import signal
 import threading
 
 from pipeline.healthcheck import check_database
 from pipeline.dashboard_access import provision
+from pipeline.api import make_server
 
 
 def main():
@@ -16,8 +17,12 @@ def main():
         provision()
     except Exception:
         raise SystemExit("Dashboard access setup failed; check the separate dashboard password and database owner configuration") from None
-    print("Pipeline environment ready; automatic pipeline execution is disabled.", flush=True)
+    server = make_server()
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print("Authenticated pipeline interface ready on the Docker network.", flush=True)
     stop.wait()
+    server.shutdown()
+    server.server_close()
 
 
 if __name__ == "__main__":

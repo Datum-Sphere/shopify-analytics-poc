@@ -187,3 +187,65 @@ The dashboard quality view additionally flags missing test/timezone/currency met
 No Shopify Analytics export/ShopifyQL reconciliation, fresh ingestion, pipeline-trigger backend, authentication/hosting layer, Cloudflare or other remote setup was implemented or tested in this slice. Existing live-return/discount limitations from the financial contract still apply. Product labels are current catalog/fallback labels, not historical dimensions. The page performs uncached SELECTs in a read-only repeatable-read snapshot and is intended for small demonstration datasets.
 
 Rendering was validated with mocked and real-database Streamlit AppTest sessions plus host HTTP checks. A graphical headless-browser screenshot attempt was blocked by execution policy; no browser screenshot or pixel-level visual review is claimed. All required Python/dbt/Docker/security checks ran successfully.
+
+
+## Phase 4B: authenticated pipeline and validated publication — October 18, 2026
+
+This supersedes Phase 4A's disabled-control and direct-analytics-access descriptions. Existing financial formulas, source selection and Shopify permissions remain unchanged. No remote exposure was configured.
+
+### Final executed checks
+
+| Command/check | Observed result |
+| --- | --- |
+| `docker compose config --quiet` | Passed; only localhost PostgreSQL/Streamlit host bindings; no backend port |
+| `docker compose up --build -d --wait --wait-timeout 120` | Both images built; all three services healthy on the existing persistent volume |
+| `docker compose exec -T -e RUN_DB_TESTS=1 -e RUN_DASHBOARD_DB_TESTS=1 -e RUN_PIPELINE_DB_TESTS=1 app python -m unittest discover -s tests -v` | **59 passed, no skips**, final run 36.259 seconds |
+| `docker compose exec -T app dbt build --project-dir dbt --profiles-dir dbt` | **PASS=108, WARN=0, ERROR=0, SKIP=0**: 16 views, 91 tests, one seed |
+| `docker compose exec -T app python -m compileall -q dashboard ingestion pipeline tests` | Passed |
+| `docker compose exec -T app python -m pip check` and equivalent in Streamlit | Both reported no broken requirements |
+| Host GET `http://localhost:8501` / `/_stcore/health` | HTTP **200** / **ok** |
+| Final `docker compose exec -T app python -m pipeline.run` | **Succeeded**, exit 0, run `6bfff21c-1781-481a-b3e7-8a08357636fe`, 14.300973 seconds, six timestamped stage transitions |
+
+The 43 Phase 4A tests remain included, with expectations updated for the enabled control and publication permissions. Eleven new mocked workflow/HTTP/UI tests and five real PostgreSQL/dbt tests cover stage order, each stage's failure, no-shell fixed dbt invocation, secret separation, 401 authentication, empty-body/path restrictions, safe errors, status/button states, success-only cache invalidation, session locks across connections/processes, CLI busy exit 2, concurrent admission, crash/orphan recovery, rollback and repeat publication. No Shopify requests occur in the Python unit/database suite. DB tests intentionally fail isolated candidate builds and clean their own source records; controlled run rows are retained with test origin.
+
+### Verified live button workflow
+
+Executed inside the actual Streamlit image using its SELECT-only login and **real internal HTTP**, without mocks:
+
+```powershell
+Get-Content tests/e2e_pipeline.py -Raw | docker compose exec -T streamlit python -
+```
+
+The actual AppTest button initiated live Shopify ingestion, full dbt build/tests and publication twice. Representative successful button runs: `7db5999d-e6c4-4c53-a64f-041bc4c031fe` and `52279690-7a63-44f6-ba4e-47b252243a67`. UI showed Running with a disabled active-run button, then Succeeded; the session publication generation changed and financial cards reloaded. A competing real HTTP trigger returned already_running/409. Unauthenticated real POST /runs and GET /status returned **401**. The initial and repeated selected metrics were identical:
+
+| Selection | Gross | Discounts | Merchandise returns | Net |
+| --- | ---: | ---: | ---: | ---: |
+| Live CAD, order #1001 | 200 | 0 | 0 | 200 |
+| Synthetic CAD, October 1–6 | 340 | 25 | 180 | 135 |
+| Synthetic CAD, October 4 | 0 | 0 | 90 | -90 |
+
+A separate source/fact query explicitly scoped to live #1001 confirmed CAD 200 gross/net. Unique source counts captured before and after the first two live button runs were identical for both stores. The final live counts remain **17 products, 26 variants, one order, one line, one payment transaction, one agreement, two sales, zero refunds/refund lines**: 49 unique raw records. Canonical synthetic counts remain 32 records. Audit counts increase by design; financial amounts and unique source counts do not inflate. All temporary validation stores were confirmed removed.
+
+### Real failure and publication consistency evidence
+
+Prepared an isolated synthetic `phase4b-failure-check.invalid` store using the existing fixtures and changed product actions to unsupported UPDATE. Then executed the same real button check with `python - --expect-failure`. Run `29991308-c3b3-4269-81c7-084fbb924f24` completed ingestion, **failed the real dbt stage**, and appeared as **Failed** with a sanitized error in the actual Streamlit page. The prior publication UUID and all displayed live/synthetic amounts stayed unchanged; no successful-refresh indicator was emitted. The test source records/audit were removed using the shared lock, and successful real button/CLI runs followed.
+
+The database suite separately compares **every row in all five published outputs plus publication metadata** before/after a real failed dbt build. It also injects a publication write failure after DELETE and confirms transaction rollback preserves every published row. Repeated successful publication does not append metrics. A long-lived SELECT-only repeatable-read reader keeps the preceding publication ID and can first read nonempty mart rows after a new publication commits, verifying retained row versions rather than TRUNCATE behavior.
+
+This is **atomic financial publication**, not a transaction spanning Shopify ingestion and dbt. Raw ingestion commits and audit history survive a later failure; candidate analytics views can change or fail while the dashboard keeps the previous publication. The supported pipeline/ingestion/fixture CLIs coordinate through one session advisory lock. Direct privileged SQL or manual dbt changes bypass that coordination and must not run concurrently. The tests do not establish consistency against bypassing administrators or a changing Shopify API snapshot.
+
+### Security evidence
+
+- Generated a new independent trigger token only in ignored local `.env`; preserved existing Shopify/database credentials and withheld all values.
+- Dedicated dashboard role: SELECT on exactly six reporting tables, no analytics/raw/operations access or write/schema/temporary-table/role-switch privileges. Real denied-write tests disable the convenience read-only setting to prove ACL enforcement. A final check after dbt rebuild confirmed no grants outside reporting.
+- Runtime Streamlit environment contains no SHOPIFY_*, POSTGRES_* or DBT_* settings and no `/app/.env`. Only its reader credentials and independent backend token are injected. XSRF and CORS protection remain enabled. No Docker socket or backend host port was added.
+- Resolved Compose was captured privately for credential-value scanning, never printed. Repository files were checked against configured actual secret values; no matches. `.env` remains ignored. PostgreSQL and Streamlit retain exact 127.0.0.1 bindings.
+- Backend errors/status are fixed safe messages, stage metadata and UUIDs. HTTP logs omit request paths/headers. dbt runs with fixed argv, shell disabled, a 900-second timeout, temporary private artifacts, discarded console output and no Shopify/trigger-token environment.
+
+### Limits and evidence boundary
+
+The bearer token authenticates the Streamlit service, not individual users. Anyone able to use the local dashboard can trigger the predefined operation; no individual login, remote protection, TLS or internet exposure was implemented. Docker/database administrators remain trusted. A new database requires explicit fixture loading before the default full dbt assertions and an accessible #1001 for this demo contract. Fresh-volume destructive reinitialization was not performed; existing-volume migration/startup was verified.
+
+Live refund/discount/edit scenarios remain unavailable in the development store. **No Shopify Analytics report/ShopifyQL reconciliation was performed.** Synthetic expected values are fixture-validated; original order data and real workflow execution are API-validated. Full-copy publication suits this small POC; historical sync, deletion reconciliation, advanced accounting and automatic snapshot-schema migrations remain deferred. The workflow is not a durable job queue or distributed fencing system; process loss becomes a failed audit and requires an explicit retry. Losing the advisory-lock connection cannot instantaneously cancel an already running dbt child; inspect active processes before retrying after such a failure. This fault was not induced against the live Docker stack. Raw ingestion audits can still show running after abrupt termination, independently of recovered pipeline status.
+
+Rendering/click/status behavior was verified with Streamlit AppTest and HTTP checks, not a graphical browser. No graphical screenshot attempt was repeated after the Phase 4A execution-policy block. Non-fatal Streamlit missing-ScriptRunContext and pandas/NumPy timedelta deprecation warnings occurred in unit tests; all checks passed without rendering exceptions. No required Phase 4B validation was omitted because tooling was unavailable.

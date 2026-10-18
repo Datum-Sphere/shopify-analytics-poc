@@ -8,16 +8,3 @@ clean-targets: [target, dbt_packages]
 models:
   shopify_analytics:
     +materialized: view
-    dashboard:
-      +grants:
-        select: [shopify_dashboard]
-    marts:
-      mart_daily_sales:
-        +grants:
-          select: [shopify_dashboard]
-      fct_sales_events:
-        +grants:
-          select: [shopify_dashboard]
-      dim_product:
-        +grants:
-          select: [shopify_dashboard]

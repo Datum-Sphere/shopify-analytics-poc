@@ -7,6 +7,7 @@ from ingestion.config import IngestionError, ShopifyConfig
 from ingestion.extract import products, orders
 from ingestion.queries import ORDERS
 from ingestion.storage import ENTITIES, Repository, connect
+from pipeline import locking
 
 
 def ingest(client, repository, verify_order=None):
@@ -73,6 +74,9 @@ def main():
     try:
         config = ShopifyConfig.from_env()
         with connect() as connection:
+            if not locking.acquire(connection):
+                print('{"status":"already_running"}')
+                return 2
             repo = Repository(connection, config.store)
             repo.initialize()
             client = ShopifyClient(config)

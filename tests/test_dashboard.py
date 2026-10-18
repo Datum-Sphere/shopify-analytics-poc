@@ -86,6 +86,11 @@ class QueryTests(unittest.TestCase):
 
 
 class PageTests(unittest.TestCase):
+    def setUp(self):
+        self.backend=patch("dashboard.pipeline_client.status",return_value={"current":None,"publication":None})
+        self.backend.start()
+        self.addCleanup(self.backend.stop)
+
     def app(self):
         from streamlit.testing.v1 import AppTest
         return AppTest.from_file(str(Path(__file__).resolve().parents[1]/"dashboard/app.py"))
@@ -98,7 +103,7 @@ class PageTests(unittest.TestCase):
             self.assertEqual(len(app.metric),4)
             self.assertEqual(app.metric[3].value,"CAD 200.00")
             self.assertEqual(len(app.get("plotly_chart")),3)
-            self.assertTrue(app.button[0].disabled)
+            self.assertFalse(app.button[0].disabled)
             self.assertFalse(load.call_args.args[0].synthetic)
 
     def test_dataset_currency_and_dates_apply_together(self):

@@ -13,14 +13,14 @@ This POC models a bounded merchandise-sales ledger. It is not a general Shopify 
 
 ## Normalization and supported amounts
 
-Preserve signed API amounts in `stg_sales`. For ORDER/RETURN events, normalize monetary component magnitudes with `abs`; `actionType` supplies the financial direction. Let N = abs(totalAmount) − abs(totalTaxAmount), and D = abs(totalDiscountAmountBeforeTaxes). With after-tax discount zero:
+Preserve signed API amounts in `stg_sales`. For ORDER/RETURN events, normalize monetary component magnitudes with `abs`; `actionType` supplies the financial direction. Let N = abs(totalAmount) âˆ’ abs(totalTaxAmount), and D = abs(totalDiscountAmountBeforeTaxes). With after-tax discount zero:
 
 | Product action | Gross sales | Discounts | Gross returns | Discounts returned | Returns | Net sales |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | ORDER | N + D | D | 0 | 0 | 0 | N |
-| RETURN | 0 | 0 | N + D | D | N | −N |
+| RETURN | 0 | 0 | N + D | D | N | âˆ’N |
 
-Return values exposed by our facts are positive deductions; this differs from Shopify report columns that display negative reversal values. The identity is gross_sales − discounts − returns_amount = net_sales. Do not subtract both net returns and gross returns, or subtract refunded discounts a second time. Our `discounts` is discounts on sales, not discounts net of reversals; `discounts_returned` is separate.
+Return values exposed by our facts are positive deductions; this differs from Shopify report columns that display negative reversal values. The identity is gross_sales âˆ’ discounts âˆ’ returns_amount = net_sales. Do not subtract both net returns and gross returns, or subtract refunded discounts a second time. Our `discounts` is discounts on sales, not discounts net of reversals; `discounts_returned` is separate.
 
 Money values are decimal currency amounts as supplied by MoneyV2, not integers to divide by 100. No floating-point arithmetic or FX conversion is used. Currency-code equality is required across event money components and the order's recorded shop currency. Synthetic USD in the same fixture store intentionally tests currency partitioning; it is not evidence that the live shop has multiple simultaneous base currencies. Historical changes to shop currency/timezone need a richer history and remain unsupported.
 
@@ -44,4 +44,8 @@ One-to-one joins from sale to agreement, order and source line preserve event gr
 
 ## Deliberately deferred
 
-No mutation or additional scope is requested. No customer identity, address, email, staff identity, payment receipt, refund note or free-text adjustment reason is extracted. Read-orders history remains bounded by the installed app's current access. No advanced price-update accounting, guaranteed cancellation/reversal report parity, physical-return workflow, historical timezone/currency changes, FX, rounding redistribution, deletion reconciliation, concurrent sync, or accounting revenue recognition is supplied. Tax-inclusive and complex tax scenarios are not exercised by the development store and are not report-reconciled. Future unsupported data should cause a failed financial build, not a guessed metric.
+No mutation or additional scope is requested. No customer identity, address, email, staff identity, payment receipt, refund note or free-text adjustment reason is extracted. Read-orders history remains bounded by the installed app's current access. No advanced price-update accounting, guaranteed cancellation/reversal report parity, physical-return workflow, historical timezone/currency changes, FX, rounding redistribution, deletion reconciliation, production-scale concurrent sync, or accounting revenue recognition is supplied. Tax-inclusive and complex tax scenarios are not exercised by the development store and are not report-reconciled. Future unsupported data should cause a failed financial build, not a guessed metric.
+
+## Validated dashboard publication (Phase 4B)
+
+Candidate `analytics` views continue to reflect mutable raw data. Dashboard queries use copied `reporting` outputs with identical grains and metrics, published together only after successful ingestion and a full dbt build/test run. A single repeatable-read DELETE/INSERT transaction replaces all five safe dashboard outputs, generation metadata and successful pipeline state. Failure retains the previous published generation; its ingestion timestamp stays attached to that generation. Raw ingestion and dbt builds are separately committed and are not transactionally rolled back with a failed build. Supported source-writing CLIs share the pipeline advisory lock; privileged manual writes/rebuilds must not run concurrently. This protects validated dashboard publication within that coordination contract, not Shopify report reconciliation or accounting revenue. See README for controls, permissions and limitations.

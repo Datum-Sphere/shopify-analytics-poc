@@ -51,9 +51,12 @@ class DashboardDatabaseTests(unittest.TestCase):
             flags=conn.execute("SELECT rolsuper,rolcreatedb,rolcreaterole,rolreplication,rolbypassrls FROM pg_roles WHERE rolname=current_user").fetchone()
             self.assertTrue(all(v is False for v in flags.values()))
             self.assertEqual(conn.execute("SHOW default_transaction_read_only").fetchone()["default_transaction_read_only"],"on")
-            grants=conn.execute("SELECT table_name FROM information_schema.role_table_grants WHERE grantee=current_user AND table_schema='analytics'").fetchall()
-            self.assertEqual({r["table_name"] for r in grants},{"mart_daily_sales","fct_sales_events","dim_product","dashboard_ingestion_status","dashboard_financial_issues"})
+            grants=conn.execute("SELECT table_name FROM information_schema.role_table_grants WHERE grantee=current_user AND table_schema='reporting'").fetchall()
+            self.assertEqual({r["table_name"] for r in grants},{"mart_daily_sales","fct_sales_events","dim_product","dashboard_ingestion_status","dashboard_financial_issues","publication"})
         for query in ("SELECT payload FROM raw.shopify_records LIMIT 1",
+                      "SELECT * FROM analytics.mart_daily_sales LIMIT 1",
+                      "SELECT * FROM operations.pipeline_runs LIMIT 1",
+                      "DELETE FROM reporting.mart_daily_sales WHERE false",
                       "UPDATE raw.shopify_records SET payload=payload WHERE false",
                       "SELECT error FROM raw.ingestion_runs LIMIT 1",
                       "CREATE TABLE public.dashboard_forbidden_test (id int)",
@@ -65,6 +68,23 @@ class DashboardDatabaseTests(unittest.TestCase):
                 with self.assertRaises(psycopg.errors.InsufficientPrivilege):conn.execute(query)
             finally:conn.rollback();conn.close()
 
+    def candidate_reader(self):
+        class Candidate:
+            def __enter__(self):
+                self.conn=admin_connect()
+                self.conn.row_factory=dict_row
+                self.conn.read_only=True
+                return self
+            def execute(self, query, params=None):
+                query=query.replace("reporting.","analytics.")
+                if "cross join analytics.publication" in query:
+                    query="SELECT last_successful_ingestion_at,NULL AS published_at,NULL AS publication_run_id FROM analytics.dashboard_ingestion_status WHERE is_synthetic=%s AND store_domain=%s"
+                return self.conn.execute(query,params)
+            def __exit__(self,*args):
+                self.conn.rollback()
+                self.conn.close()
+        return Candidate()
+
     def test_custom_product_and_unsupported_quality_scope(self):
         store="dashboard-fixture-"+uuid4().hex+".invalid"
         with admin_connect() as admin:
@@ -74,31 +94,31 @@ class DashboardDatabaseTests(unittest.TestCase):
                 load_records(repo)
                 admin.execute("UPDATE raw.shopify_records SET payload=jsonb_set(payload,'{product}','null') WHERE store_domain=%s AND entity='order_line_item' AND source_id LIKE '%%A1'",(store,))
                 admin.commit()
-                full=data.load(data.Filters(True,store,"CAD",date(2026,10,1),date(2026,10,6)),self.reader)
+                full=data.load(data.Filters(True,store,"CAD",date(2026,10,1),date(2026,10,6)),self.candidate_reader)
                 custom=[p for p in full["products"] if p["title"]=="Custom / unlinked product"]
                 self.assertEqual(len(custom),1)
                 self.assertEqual(sum(p["net_sales"] for p in full["products"]),Decimal(135))
                 admin.execute("UPDATE raw.shopify_records SET payload=jsonb_set(payload,'{actionType}',%s::jsonb) WHERE store_domain=%s AND entity='sale' AND source_id LIKE '%%return-1' AND payload->>'lineType'='PRODUCT'",('"UPDATE"',store))
                 admin.commit()
-                blocked=data.load(data.Filters(True,store,"CAD",date(2026,10,4),date(2026,10,4)),self.reader)
+                blocked=data.load(data.Filters(True,store,"CAD",date(2026,10,4),date(2026,10,4)),self.candidate_reader)
                 self.assertEqual(blocked["status"],"unsupported")
                 self.assertIsNone(blocked["kpis"]["net_sales"])
                 self.assertEqual(blocked["products"],[])
-                other_date=data.load(data.Filters(True,store,"CAD",date(2026,10,1),date(2026,10,1)),self.reader)
+                other_date=data.load(data.Filters(True,store,"CAD",date(2026,10,1),date(2026,10,1)),self.candidate_reader)
                 self.assertEqual(other_date["status"],"ready")
-                other_currency=data.load(data.Filters(True,store,"USD",date(2026,10,4),date(2026,10,4)),self.reader)
+                other_currency=data.load(data.Filters(True,store,"USD",date(2026,10,4),date(2026,10,4)),self.candidate_reader)
                 self.assertEqual(other_currency["status"],"empty")
                 # A non-product adjustment is absent from the mart but must still block reporting.
                 admin.execute("UPDATE raw.shopify_records SET payload=jsonb_set(payload,'{actionType}',%s::jsonb) WHERE store_domain=%s AND entity='sale' AND source_id LIKE '%%return-1' AND payload->>'lineType'='PRODUCT'",('"RETURN"',store))
                 admin.execute("UPDATE raw.shopify_records SET payload=jsonb_set(payload,'{__typename}',%s::jsonb) WHERE store_domain=%s AND entity='sale' AND payload->>'lineType'='SHIPPING'",('"AdjustmentSale"',store))
                 admin.commit()
-                adjustment=data.load(data.Filters(True,store,"CAD",date(2026,10,4),date(2026,10,4)),self.reader)
+                adjustment=data.load(data.Filters(True,store,"CAD",date(2026,10,4),date(2026,10,4)),self.candidate_reader)
                 self.assertEqual(adjustment["status"],"unsupported")
                 self.assertGreater(adjustment["issue_count"],0)
                 # Unknown-date extraction gaps block even an otherwise valid earlier day.
                 admin.execute("UPDATE raw.shopify_records SET payload=payload-'agreements' WHERE store_domain=%s AND entity='order' AND payload->>'name'='#FIXTURE-B'",(store,))
                 admin.commit()
-                gap=data.load(data.Filters(True,store,"CAD",date(2026,10,1),date(2026,10,1)),self.reader)
+                gap=data.load(data.Filters(True,store,"CAD",date(2026,10,1),date(2026,10,1)),self.candidate_reader)
                 self.assertEqual(gap["status"],"unsupported")
                 self.assertIsNone(gap["kpis"]["gross_sales"])
             finally:

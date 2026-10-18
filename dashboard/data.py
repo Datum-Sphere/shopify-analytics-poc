@@ -45,16 +45,16 @@ def connect():
 
 CATALOG_SQL = """
 with available as (
- select store_domain,is_synthetic,currency_code,reporting_date from analytics.mart_daily_sales
+ select store_domain,is_synthetic,currency_code,reporting_date from reporting.mart_daily_sales
  union all
- select store_domain,is_synthetic,currency_code,reporting_date from analytics.dashboard_financial_issues
+ select store_domain,is_synthetic,currency_code,reporting_date from reporting.dashboard_financial_issues
 )
 select store_domain,is_synthetic,currency_code,min(reporting_date) as first_date,max(reporting_date) as last_date
 from available group by store_domain,is_synthetic,currency_code
 order by store_domain,currency_code nulls last
 """
 WHERE = "is_synthetic=%s and store_domain=%s and currency_code=%s and reporting_date between %s and %s"
-DAILY_SQL = "SELECT reporting_date,gross_sales,discounts,returns_amount,net_sales,unsupported_event_count FROM analytics.mart_daily_sales WHERE " + WHERE + " ORDER BY reporting_date"
+DAILY_SQL = "SELECT reporting_date,gross_sales,discounts,returns_amount,net_sales,unsupported_event_count FROM reporting.mart_daily_sales WHERE " + WHERE + " ORDER BY reporting_date"
 KPI_SQL = """
 select count(*) as day_count,
  case when bool_and(unsupported_event_count=0 and gross_sales is not null and discounts is not null and returns_amount is not null and net_sales is not null)
@@ -65,27 +65,27 @@ select count(*) as day_count,
       then sum(returns_amount) end as returns_amount,
  case when bool_and(unsupported_event_count=0 and gross_sales is not null and discounts is not null and returns_amount is not null and net_sales is not null)
       then sum(net_sales) end as net_sales
-from analytics.mart_daily_sales WHERE """ + WHERE
+from reporting.mart_daily_sales WHERE """ + WHERE
 PRODUCTS_SQL = """
 with product_totals as (
  select product_key,case when bool_and(coalesce(is_supported,false) and net_sales is not null)
                          then sum(net_sales) end as net_sales
- from analytics.fct_sales_events WHERE """ + WHERE + """ and is_test=false
+ from reporting.fct_sales_events WHERE """ + WHERE + """ and is_test=false
  group by product_key
 )
 select coalesce(t.product_key,'__custom__') as product_key,
        coalesce(nullif(d.title,''),'Custom / unlinked product') as title,t.net_sales
 from product_totals t
-left join analytics.dim_product d on t.product_key=d.product_key
+left join reporting.dim_product d on t.product_key=d.product_key
 order by t.net_sales desc nulls last,product_key
 """
 ISSUES_SQL = """
-select count(*) as issue_count from analytics.dashboard_financial_issues
+select count(*) as issue_count from reporting.dashboard_financial_issues
 where is_synthetic=%s and store_domain=%s and (currency_code=%s or currency_code is null)
   and (reporting_date between %s and %s or reporting_date is null)
 """
 METADATA_SQL = """
-select last_successful_ingestion_at from analytics.dashboard_ingestion_status
+select last_successful_ingestion_at,published_at,run_id as publication_run_id from reporting.dashboard_ingestion_status cross join reporting.publication
 where is_synthetic=%s and store_domain=%s
 """
 METRICS = ("gross_sales","discounts","returns_amount","net_sales")
@@ -96,7 +96,7 @@ def catalog(connection_factory=connect):
         with connection_factory() as connection:
             return connection.execute(CATALOG_SQL).fetchall()
     except Exception:
-        raise DashboardUnavailable("Analytics is not ready. Ask the project operator to complete the documented database and dbt setup.") from None
+        raise DashboardUnavailable("Analytics is not ready. Ask the project operator to complete a successful pipeline run to publish validated data.") from None
 
 
 def load(filters, connection_factory=connect):
@@ -117,7 +117,9 @@ def load(filters, connection_factory=connect):
             daily=[]
             products=[]
         return {"status":status,"kpis":kpis,"daily":daily,"products":products,
-                "issue_count":issues,"last_successful_ingestion_at":meta["last_successful_ingestion_at"] if meta else None}
+                "issue_count":issues,"last_successful_ingestion_at":meta["last_successful_ingestion_at"] if meta else None,
+                "published_at":meta["published_at"] if meta else None,
+                "publication_run_id":meta["publication_run_id"] if meta else None}
     except DashboardUnavailable:
         raise
     except Exception:
