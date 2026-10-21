@@ -1,6 +1,6 @@
 # Shopify Analytics POC
 
-Free, Dockerized consulting demonstration. The foundation, read-only ingestion, bounded financial models, and Phase 4B Streamlit/Plotly dashboard with secure one-click pipeline execution are implemented. Scheduling is not implemented. Financial results are API/fixture validated, not reconciled to a Shopify Analytics report.
+Free, Dockerized consulting demonstration. The foundation, read-only ingestion, bounded financial models, and Phase 4B Streamlit/Plotly dashboard with secure one-click pipeline execution and opt-in read-only demo enforcement are implemented. Scheduling is not implemented. Financial results are API/fixture validated, not reconciled to a Shopify Analytics report.
 
 ## Architecture
 
@@ -203,7 +203,7 @@ The existing app container hosts a small standard-library HTTP server on Docker-
 
 Only the Streamlit **server** and backend receive this independent token; it is never rendered to the browser. Only the backend receives Shopify and privileged database credentials. Streamlit uses fixed server-to-server operations and SELECT-only database reads; it has no subprocess interface or Docker socket. There is no backend host port. Preserve `127.0.0.1:5432:5432` for DataGrip and `127.0.0.1:8501:8501` on the future demo laptop.
 
-The token authenticates the Streamlit service, not individual people. Anyone who can use the local dashboard can request this fixed workflow. This remains a trusted local demonstration: no multi-user login, TLS, Cloudflare, remote hosting or internet exposure is configured. Local Docker/database administrators can inspect secrets and bypass application safeguards. Protect remote access before any future exposure; no such exposure is authorized in this phase.
+The token authenticates the Streamlit service, not individual people. With `REMOTE_DEMO_READ_ONLY=false` (the default), anyone who can use the local dashboard can request this fixed workflow. Set it to `true` before sharing a demo; the backend then denies every HTTP trigger, including valid-token requests. This remains a trusted local demonstration: no multi-user login, TLS, Cloudflare, remote hosting or internet exposure is configured. Local Docker/database administrators can inspect secrets and bypass application safeguards. Any future remote access must be authenticated separately; this repository does not configure a tunnel or its access policy.
 
 A PostgreSQL session advisory lock coordinates pipeline CLI/API runs and the supported standalone ingestion/fixture CLIs. The backend acquires it **before** accepting a request (202); a competing trigger receives **409 already_running**. The lock stays on the worker's database connection across ingestion commits, dbt subprocess execution and publication. Process/connection loss releases the lock; status retrieval or the next admitted run marks an orphaned run failed. There is no automatic retry of an uncertain request, no queue, scheduler, Redis or background task framework. Recheck status after a network timeout before retrying. A worker killed after publication commits may lose its response; the database publication/run state remains authoritative.
 
@@ -231,14 +231,70 @@ Run these **sequentially** on the disposable development stack after the first s
 ```powershell
 docker compose exec -T -e RUN_DB_TESTS=1 -e RUN_DASHBOARD_DB_TESTS=1 -e RUN_PIPELINE_DB_TESTS=1 app python -m unittest discover -s tests -v
 docker compose exec -T app dbt build --project-dir dbt --profiles-dir dbt
+# Local mode only (REMOTE_DEMO_READ_ONLY=false), with remote access stopped:
 # Opt-in: real button -> internal HTTP -> LIVE Shopify -> dbt -> publication, twice.
 Get-Content tests/e2e_pipeline.py -Raw | docker compose exec -T streamlit python -
 docker compose ps
 (Invoke-WebRequest http://localhost:8501/_stcore/health).Content
 ```
 
-The live check uses Streamlit AppTest inside its actual production image with its real read-only role and real backend HTTP calls. It checks unauthenticated 401 responses, overlapping-run rejection, status changes, successful refresh and unchanged CAD totals: live **200/0/0/200**, synthetic **340/25/180/135**, plus the later return day net **-90**. It assumes the documented October 2026 development-store snapshot; deliberate future store changes require updating its expectations. No graphical-browser or Shopify-report reconciliation claim is made. See [VALIDATION.md](VALIDATION.md) for executed results.
+The live check requires local trigger mode (`REMOTE_DEMO_READ_ONLY=false`). Use `e2e_remote_demo.py` below for a read-only deployment. It uses Streamlit AppTest inside its actual production image with its real read-only role and real backend HTTP calls. It checks unauthenticated 401 responses, overlapping-run rejection, status changes, successful refresh and unchanged CAD totals: live **200/0/0/200**, synthetic **340/25/180/135**, plus the later return day net **-90**. It assumes the documented October 2026 development-store snapshot; deliberate future store changes require updating its expectations. No graphical-browser or Shopify-report reconciliation claim is made. See [VALIDATION.md](VALIDATION.md) for executed results.
+
+## Read-only remote demo mode
+
+`REMOTE_DEMO_READ_ONLY` is a **deployment setting** passed to both `app` and `streamlit`. Only exact lowercase `true` and `false` are accepted: unset defaults to `false` for existing trusted-local behavior; an explicitly empty value, uppercase spelling, spaces, `1` or `yes` are invalid. Compose preserves an empty value so application validation rejects it. Invalid configuration prevents the backend HTTP server from starting; Streamlit also fails closed with no trigger control if started independently. Configuration errors never echo the rejected value. `docker compose config --quiet` validates Compose syntax/interpolation, not this application-level boolean.
+
+When `true`, the dashboard shows a small **Read-only demo** notice and omits Run Pipeline & Refresh. Filters, financial queries/charts, safe authenticated status polling and generation-based refresh after an operator publication continue working. The backend independently returns **403** for every `POST /runs`, even with a valid token, no token, a spoofed body or mode query parameter. No lock, audit row or worker is admitted. Status still requires the existing bearer token; minimal health remains available internally. Browser session state and query parameters cannot override process environment. A frontend/backend mode mismatch still cannot bypass an enabled backend restriction.
+
+The operator's trusted container CLI remains available in either mode:
+
+```powershell
+docker compose exec -T app python -m pipeline.run
+```
+
+This still performs Shopify ingestion, dbt validation and atomic publication under the existing lock; it does not use the HTTP trigger. Visitor sessions pick up a new successful publication through existing status polling. Read-only mode does not cancel an already admitted run. Before switching modes, let active runs complete and stop any existing remote access. Recreate **both** application containers; `docker compose restart` does not load changed environment settings. The database volume and localhost bindings are preserved.
+
+### Switch modes (PowerShell)
+
+For a persistent deployment, set `REMOTE_DEMO_READ_ONLY=true` in the ignored `.env`. An existing PowerShell environment variable with the same name takes precedence, so clear it before applying the `.env` setting:
+
+```powershell
+# Edit only the non-secret flag in .env: REMOTE_DEMO_READ_ONLY=true
+Remove-Item Env:REMOTE_DEMO_READ_ONLY -ErrorAction SilentlyContinue
+docker compose config --quiet
+# Include --build when first installing this feature or after code changes.
+docker compose up --build -d --force-recreate --wait --wait-timeout 180 app streamlit
+Get-Content tests/e2e_remote_demo.py -Raw | docker compose exec -T streamlit python -
+```
+
+For temporary explicit mode switching/testing without editing `.env`:
+
+```powershell
+# Enable read-only demo mode in both containers.
+$env:REMOTE_DEMO_READ_ONLY = 'true'
+docker compose config --quiet
+docker compose up -d --force-recreate --wait --wait-timeout 180 app streamlit
+Get-Content tests/e2e_remote_demo.py -Raw | docker compose exec -T streamlit python -
+
+# Restore trusted local triggers only after remote access has been stopped.
+$env:REMOTE_DEMO_READ_ONLY = 'false'
+docker compose config --quiet
+docker compose up -d --force-recreate --wait --wait-timeout 180 app streamlit
+Get-Content tests/e2e_remote_demo.py -Raw | docker compose exec -T streamlit python -
+
+# Return subsequent Compose invocations to the persisted .env setting.
+Remove-Item Env:REMOTE_DEMO_READ_ONLY -ErrorAction SilentlyContinue
+# Recreate app and streamlit again if that persisted value differs.
+```
+
+The integration check makes real internal HTTP requests, tests attempted browser policy overrides and renders live/synthetic filters/charts through the SELECT-only role. It **never admits a pipeline run**: in local mode it tests unauthorized/body rejection rather than sending an authorized empty POST. It expects the documented October 2026 demo snapshot; deliberate source changes may require adjusting its financial assertions. Mocked tests separately prove enabled-mode admission and CLI availability. Reproduce the complete regression suite with the Phase 4B commands above.
+
+### Tunnel boundary and current limitations
+
+**No Cloudflare software, tunnel, public hostname or Access authentication policy is installed or configured by this change.** The feature prepares the app for a separately protected Cloudflare Tunnel; the flag itself does not authenticate viewers. A future tunnel must route only to the dashboard at `http://localhost:8501`, with authenticated access. Never route or publish `app:8080`, PostgreSQL, a Docker socket or a privileged backend endpoint. Keep existing host bindings on `127.0.0.1:8501` and `127.0.0.1:5432` (DataGrip); the backend has no host port. The trigger token, reader password and Shopify credentials remain server-side and outside Git. Streamlit still receives no Shopify or privileged database credentials.
+
+There is no per-viewer/operator distinction in the browser: **all HTTP pipeline triggering is disabled** in demo mode; the operator uses the trusted CLI. Deployment administrators can change environment settings, so protect the laptop, Docker access and `.env`. A stale frontend may still show an old button until rerun, but the recreated read-only backend rejects it. Do not share the demo until **both** containers have the setting enabled and the 403/UI integration check passes. Cross-container mode changes are not atomic, and this flag does not change data publication semantics or certify Shopify-report reconciliation.
 
 ## Next step
 
-Obtain a Shopify report export and representative real returns/discounts to extend reconciliation beyond API and fixture validation. Remote access and individual-user authorization require a separately requested phase.
+Obtain a Shopify report export and representative real returns/discounts to extend reconciliation beyond API and fixture validation. Cloudflare Tunnel deployment and individual-user authentication require a separately requested phase; read-only application enforcement is available now.

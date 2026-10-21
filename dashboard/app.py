@@ -99,7 +99,7 @@ def main():
         st.write("Gross sales − discounts − returns = net merchandise sales. Refund audit records are not added to sale events. Product titles reflect the current catalog or the model's missing-catalog fallback.")
         st.write("The demo store currently verifies order #1001 against API data. Partial-return and discount scenarios are fixture-validated. No Shopify Analytics export or ShopifyQL report reconciliation has been performed.")
         st.caption("The financial snapshot is published only after dbt build/tests succeed. This is model validation, not Shopify report reconciliation.")
-        st.caption("Project contract: docs/FINANCIALS.md. No remote access is enabled.")
+        st.caption("Project contract: docs/FINANCIALS.md.")
 
 
 if __name__=="__main__":

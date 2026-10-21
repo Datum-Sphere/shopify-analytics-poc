@@ -249,3 +249,51 @@ The bearer token authenticates the Streamlit service, not individual users. Anyo
 Live refund/discount/edit scenarios remain unavailable in the development store. **No Shopify Analytics report/ShopifyQL reconciliation was performed.** Synthetic expected values are fixture-validated; original order data and real workflow execution are API-validated. Full-copy publication suits this small POC; historical sync, deletion reconciliation, advanced accounting and automatic snapshot-schema migrations remain deferred. The workflow is not a durable job queue or distributed fencing system; process loss becomes a failed audit and requires an explicit retry. Losing the advisory-lock connection cannot instantaneously cancel an already running dbt child; inspect active processes before retrying after such a failure. This fault was not induced against the live Docker stack. Raw ingestion audits can still show running after abrupt termination, independently of recovered pipeline status.
 
 Rendering/click/status behavior was verified with Streamlit AppTest and HTTP checks, not a graphical browser. No graphical screenshot attempt was repeated after the Phase 4A execution-policy block. Non-fatal Streamlit missing-ScriptRunContext and pandas/NumPy timedelta deprecation warnings occurred in unit tests; all checks passed without rendering exceptions. No required Phase 4B validation was omitted because tooling was unavailable.
+
+
+## Read-only remote demo enforcement — October 21, 2026
+
+Implemented application-level preparation for a future authenticated Cloudflare Tunnel. **No Cloudflare software, tunnel, hostname, public route or Access policy was installed or configured.** No financial model, metric formula, dashboard SQL or database role/grant logic changed. The Docker network and host port boundaries remain unchanged.
+
+### Executed automated and Docker validation
+
+| Command/check | Actual result |
+| --- | --- |
+| `docker compose config --quiet` | Passed with the unset/default-false configuration and with persistent true in `.env` |
+| `docker compose up --build -d --wait --wait-timeout 180` | Both images rebuilt; PostgreSQL, app and Streamlit healthy in default local mode |
+| `docker compose exec -T -e RUN_DB_TESTS=1 -e RUN_DASHBOARD_DB_TESTS=1 -e RUN_PIPELINE_DB_TESTS=1 app python -m unittest discover -s tests -v` | **72 passed, no skips**, 59.024 seconds: all 59 existing tests plus 13 new demo-policy tests |
+| `Get-Content tests/e2e_remote_demo.py -Raw \| docker compose exec -T streamlit python -` in default false mode | Passed: local button available, existing trigger authentication/body validation, authenticated status, real dashboard reads/filters/charts |
+| Set only `REMOTE_DEMO_READ_ONLY=true` in ignored `.env`; `docker compose up --build -d --force-recreate --wait --wait-timeout 180 app streamlit` | Both containers recreated healthy with true; persistent database retained |
+| Same `e2e_remote_demo.py` command in true mode | Passed before and after the operator CLI run: all trigger tokens denied, read-only notice/button policy, attempted browser overrides blocked, financial reads functional |
+| `docker compose exec -T app python -m pipeline.run` with runtime true | **Succeeded**, exit 0, real ingestion/dbt/publication run `8c7707d7-ac24-483b-b4b2-eb8495e8f80e`; latest publication confirmed succeeded/cli |
+| `docker compose exec -T app dbt build --project-dir dbt --profiles-dir dbt` | **PASS=108 WARN=0 ERROR=0 SKIP=0**: 16 views, 91 financial/data tests, one seed |
+| `docker compose exec -T app python -m compileall -q runtime_config.py dashboard pipeline tests` | Passed |
+| `python -m pip check` in app and Streamlit images | Both passed; no broken requirements |
+| Host GET `http://localhost:8501` / `/_stcore/health` | **HTTP 200** / **ok**; all three containers healthy |
+
+The initial rebuild pulled a newer Python 3.12 base/transitive packages; direct dependency pins were unchanged. Tests retained the existing non-fatal Streamlit ScriptRunContext and pandas/NumPy timedelta warnings, without rendering exceptions.
+
+### Enforcement and bypass evidence
+
+The shared parser accepts only exact `true`/`false`; unset defaults to false. Unit checks reject empty, uppercase, numeric, whitespace and unexpected values without echoing them. Two additional disposable Docker invocations with `REMOTE_DEMO_READ_ONLY=TRUE` and an explicit empty value exited **1 as expected**, with the fixed configuration error before an HTTP server could bind. Captured resolved Compose confirmed it preserves explicit empty values rather than substituting false. Invalid UI configuration withholds controls while mocked financial reads remain available.
+
+Real internal HTTP checks in the running read-only deployment confirmed:
+
+- `POST /runs` with the **actual valid backend token**, a wrong token and no token each returns **403**. Spoofed body/query values setting the mode to false also return 403. Pipeline status stayed unchanged throughout these requests. Unit HTTP tests additionally prove the admission function and database connection are never called.
+- `GET /status` without a token or with a wrong token remains **401**; the valid token remains **200**. Minimal internal health remains **200** without authentication, matching previous behavior.
+- The actual Streamlit page has a **Read-only demo** caption and no pipeline button. Browser-controlled session/query mode values cannot restore the button. A forged button event is also blocked in unit tests. A mocked client test confirms a stale/mismatched local UI handles the backend 403 with a fixed useful read-only error instead of starting a run.
+- Default-false mode preserves the enabled local control, 401 authentication, 202 admission and 409 busy responses (HTTP/unit tests). Its deployed integration check uses 401/400 rejection paths and never admits a pipeline run. The trusted CLI is independent of this HTTP policy; its real successful execution under true was verified separately.
+
+The opt-in integration script uses the actual production Streamlit image, real internal HTTP and SELECT-only database connection. It verifies unchanged live CAD net **200**, synthetic CAD **340 gross / 25 discounts / 180 returns / 135 net**, later-return day **CAD -90 net**, isolated synthetic **USD 7**, three charts and working dataset/currency/date filters. These checks are API/fixture-derived financial regression evidence, **not Shopify-report reconciliation**. No real live refund/discount examples were introduced.
+
+### Deployment and security boundary
+
+The stack is left running with `REMOTE_DEMO_READ_ONLY=true` persisted in the ignored local `.env`, with other credential bytes preserved. Both runtime settings were independently checked. To switch modes, edit this single flag and recreate **both** app and Streamlit containers; see the exact PowerShell commands in README. The server reads policy at startup, and unit tests prove changing environment later cannot switch a running HTTP server. A regular container restart does not load changed Compose environment. No changes to secrets or a database reset are required.
+
+The backend still has no host port. PostgreSQL and Streamlit retain `127.0.0.1:5432` and `127.0.0.1:8501`; no Docker socket mount or tunnel service was added. Runtime Streamlit has no SHOPIFY_*, POSTGRES_* or DBT_* variables and no `.env`; XSRF/CORS protections remain enabled. Its independent token is used only server-to-server for authenticated status. A final database check confirmed no dashboard table grants outside the reporting schema. Repository files and captured container logs were scanned against configured credential values without matches; `.env` remains ignored. Local credential values and container environments were not printed.
+
+### Limits
+
+This flag does not authenticate remote viewers or deploy Cloudflare. Future authenticated tunnel routing must expose **only the dashboard**, never the API/database/socket. Real tunnel authentication, external browser access, WebSocket behavior through Cloudflare and graphical browser rendering were not tested; they require the separately requested deployment. Rendering here uses Streamlit AppTest plus host HTTP checks.
+
+Read-only mode blocks HTTP admission rather than already running jobs. Finish active runs and stop any existing remote access before switching; container recreation is not atomic across services. Unset/false intentionally retains trusted-local triggering, so sharing requires explicit true in both containers and a passing read-only integration check. Administrators with Docker/filesystem access can still change deployment settings or run the trusted CLI. Existing publication/locking and financial-reconciliation limitations remain unchanged. No required application/Docker validation was skipped because tooling was unavailable.

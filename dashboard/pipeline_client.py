@@ -27,9 +27,13 @@ def request(path, method="GET"):
             with build_opener(NoRedirect()).open(req, timeout=5) as response:
                 return json.load(response)
         except HTTPError as exc:
+            if exc.code == 403:
+                raise Unavailable("Pipeline execution is disabled in read-only demo mode.") from None
             if exc.code == 409:
                 return {"status": "already_running"}
             raise
+    except Unavailable:
+        raise
     except Exception:
         raise Unavailable("Pipeline control is unavailable. Ask the operator to check backend health and authentication.") from None
 

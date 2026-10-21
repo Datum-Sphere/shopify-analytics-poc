@@ -7,6 +7,7 @@ import threading
 
 from ingestion.storage import connect
 from pipeline.run import prepare, execute, status
+from runtime_config import remote_demo_read_only
 
 
 def token_from_env():
@@ -83,7 +84,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             self.close_connection = True
-            if not self.authorized():
+            # Enforce deployment policy before auth, body parsing or admission.
+            # Possession of a valid token never overrides read-only demo mode.
+            if self.server.remote_demo_read_only and self.path.split("?", 1)[0] == "/runs":
+                self.reply(403, {"error": "Pipeline execution is disabled in read-only demo mode."})
+            elif not self.authorized():
                 self.reply(401, {"error": "Unauthorized"})
             elif self.path != "/runs":
                 self.reply(404, {"error": "Unknown operation"})
@@ -104,6 +109,9 @@ class Server(ThreadingHTTPServer):
 
 
 def make_server(address=("0.0.0.0", 8080)):
+    read_only = remote_demo_read_only()  # Reject invalid configuration before binding.
+    token = token_from_env()
     server = Server(address, Handler)
-    server.token = token_from_env()
+    server.token = token
+    server.remote_demo_read_only = read_only
     return server

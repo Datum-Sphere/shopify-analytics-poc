@@ -4,6 +4,7 @@ WORKDIR /app
 COPY dashboard/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt && useradd --create-home app
 COPY --chown=app:app dashboard /app/dashboard
+COPY --chown=app:app runtime_config.py /app/runtime_config.py
 COPY --chown=app:app dashboard/.streamlit /app/.streamlit
 USER app
 EXPOSE 8501

@@ -2,6 +2,7 @@
 import streamlit as st
 
 from dashboard import pipeline_client
+from runtime_config import remote_demo_read_only
 
 LABELS = {"running": "Running", "succeeded": "Succeeded", "failed": "Failed"}
 
@@ -9,9 +10,18 @@ LABELS = {"running": "Running", "succeeded": "Succeeded", "failed": "Failed"}
 @st.fragment(run_every="2s")
 def render():
     try:
+        read_only = remote_demo_read_only()
+    except ValueError as exc:
+        st.error(str(exc))
+        st.caption("Pipeline controls are disabled until deployment configuration is corrected.")
+        return
+    if read_only:
+        st.caption("Read-only demo")
+    try:
         state = pipeline_client.status()
     except pipeline_client.Unavailable as exc:
-        st.button("Run Pipeline & Refresh", disabled=True)
+        if not read_only:
+            st.button("Run Pipeline & Refresh", disabled=True)
         st.warning(str(exc))
         return
     current = state.get("current") or {}
@@ -29,7 +39,7 @@ def render():
         st.caption("Showing the previous validated publication, if one exists.")
     if running:
         st.info("A run is already active. Status updates automatically; the last validated data remains available.")
-    if st.button("Run Pipeline & Refresh", disabled=running, type="primary"):
+    if not read_only and st.button("Run Pipeline & Refresh", disabled=running, type="primary"):
         try:
             result = pipeline_client.trigger()
             if result["status"] == "already_running":
@@ -47,4 +57,5 @@ def render():
         # then rerun the full page only after a committed successful publication.
         st.cache_data.clear()
         st.rerun()
-    st.caption("Fixed workflow: Shopify → dbt build/tests → validated publication. Local demo access only.")
+    st.caption("Operator refresh: Shopify → dbt build/tests → validated publication." if read_only else
+               "Fixed workflow: Shopify → dbt build/tests → validated publication. Local demo access only.")

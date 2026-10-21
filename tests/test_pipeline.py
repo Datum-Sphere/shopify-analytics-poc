@@ -63,7 +63,7 @@ class WorkflowTests(unittest.TestCase):
 class InterfaceTests(unittest.TestCase):
     def setUp(self):
         self.token="unit-test-independent-"+"t"*40
-        with patch.dict(os.environ,{"PIPELINE_TRIGGER_TOKEN":self.token}):
+        with patch.dict(os.environ,{"PIPELINE_TRIGGER_TOKEN":self.token,"REMOTE_DEMO_READ_ONLY":"false"}):
             self.server=api.make_server(("127.0.0.1",0))
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True)
         self.thread.start()
@@ -108,6 +108,11 @@ class InterfaceTests(unittest.TestCase):
 
 
 class ControlsTests(unittest.TestCase):
+    def setUp(self):
+        self.mode=patch.dict(os.environ,{"REMOTE_DEMO_READ_ONLY":"false"})
+        self.mode.start()
+        self.addCleanup(self.mode.stop)
+
     def render(self,state):
         from streamlit.testing.v1 import AppTest
         app=AppTest.from_file(str(Path(__file__).resolve().parents[1]/"dashboard/app.py"))

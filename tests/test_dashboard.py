@@ -87,6 +87,9 @@ class QueryTests(unittest.TestCase):
 
 class PageTests(unittest.TestCase):
     def setUp(self):
+        self.mode=patch.dict("os.environ",{"REMOTE_DEMO_READ_ONLY":"false"})
+        self.mode.start()
+        self.addCleanup(self.mode.stop)
         self.backend=patch("dashboard.pipeline_client.status",return_value={"current":None,"publication":None})
         self.backend.start()
         self.addCleanup(self.backend.stop)
